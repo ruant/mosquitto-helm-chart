@@ -32,12 +32,19 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
+            {{- if .Values.listeners.mqtt.enabled }}
             - name: mqtt
-              containerPort: 1883
+              containerPort: {{ .Values.listeners.mqtt.port }}
               protocol: TCP
-            {{- if .Values.mqttOverWebsocket }}
+            {{- end }}
+            {{- if .Values.listeners.websocket.enabled }}
             - name: mqtt-ws
-              containerPort: 9001
+              containerPort: {{ .Values.listeners.websocket.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.listeners.mqttTls.enabled }}
+            - name: mqtt-tls
+              containerPort: {{ .Values.listeners.mqttTls.port }}
               protocol: TCP
             {{- end }}
           volumeMounts:
@@ -55,12 +62,56 @@ spec:
               subPath: acl.conf
               readOnly: true
             {{- end }}
+            {{- if and .Values.listeners.mqttTls.enabled .Values.listeners.mqttTls.tls }}
+            - name: tls-certs
+              mountPath: /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.certKey | default "tls.crt" }}
+              subPath: {{ .Values.listeners.mqttTls.tls.certKey | default "tls.crt" }}
+              readOnly: true
+            - name: tls-certs
+              mountPath: /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.keyKey | default "tls.key" }}
+              subPath: {{ .Values.listeners.mqttTls.tls.keyKey | default "tls.key" }}
+              readOnly: true
+            {{- if .Values.listeners.mqttTls.tls.requireClientCerts }}
+            - name: tls-certs
+              mountPath: /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.caKey | default "ca.crt" }}
+              subPath: {{ .Values.listeners.mqttTls.tls.caKey | default "ca.crt" }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- if .Values.listeners.websocket.tls.enabled }}
+            - name: tls-certs-ws
+              mountPath: /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.certKey }}
+              subPath: {{ .Values.listeners.websocket.tls.certKey }}
+              readOnly: true
+            - name: tls-certs-ws
+              mountPath: /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.keyKey }}
+              subPath: {{ .Values.listeners.websocket.tls.keyKey }}
+              readOnly: true
+            {{- if .Values.listeners.websocket.tls.requireClientCerts }}
+            - name: tls-certs-ws
+              mountPath: /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.caKey }}
+              subPath: {{ .Values.listeners.websocket.tls.caKey }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
           livenessProbe:
             tcpSocket:
-              port: 1883
+              {{- if .Values.listeners.mqtt.enabled }}
+              port: {{ .Values.listeners.mqtt.port }}
+              {{- else if .Values.listeners.websocket.enabled }}
+              port: {{ .Values.listeners.websocket.port }}
+              {{- else if .Values.listeners.mqttTls.enabled }}
+              port: {{ .Values.listeners.mqttTls.port }}
+              {{- end }}
           readinessProbe:
             tcpSocket:
-              port: 1883
+              {{- if .Values.listeners.mqtt.enabled }}
+              port: {{ .Values.listeners.mqtt.port }}
+              {{- else if .Values.listeners.websocket.enabled }}
+              port: {{ .Values.listeners.websocket.port }}
+              {{- else if .Values.listeners.mqttTls.enabled }}
+              port: {{ .Values.listeners.mqttTls.port }}
+              {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -75,6 +126,16 @@ spec:
             {{- else }}
             secretName: {{ include "mosquitto.fullname" . }}
             {{- end }}
+        {{- end }}
+        {{- if and .Values.listeners.mqttTls.enabled .Values.listeners.mqttTls.tls .Values.listeners.mqttTls.tls.secretName }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.listeners.mqttTls.tls.secretName }}
+        {{- end }}
+        {{- if and .Values.listeners.websocket.tls.enabled .Values.listeners.websocket.tls.secretName }}
+        - name: tls-certs-ws
+          secret:
+            secretName: {{ .Values.listeners.websocket.tls.secretName }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

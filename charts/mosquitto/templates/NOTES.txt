@@ -1,22 +1,72 @@
-1. Get the application URL by running these commands:
-{{- if and .Values.mqttOverWebsocket .Values.ingress.enabled }}
-{{- range $host := .Values.ingress.mqttOverWebsocketPort }}
-  {{- range .paths }}
-  ws{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
-  {{- end }}
+Mosquitto MQTT Broker has been deployed successfully!
+
+Available connection endpoints:
+
+{{- if .Values.listeners.mqtt.enabled }}
+## Plain MQTT (port {{ .Values.listeners.mqtt.port }})
+{{- if eq .Values.service.mqtt.type "LoadBalancer" }}
+  # Get the LoadBalancer IP for MQTT connections:
+  kubectl get svc --namespace {{ .Release.Namespace }} {{ include "mosquitto.fullname" . }}-mqtt
+
+  # Connect using: mqtt://<EXTERNAL-IP>:{{ .Values.listeners.mqtt.port }}
+{{- else if eq .Values.service.mqtt.type "ClusterIP" }}
+  # Port-forward for local access:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "mosquitto.fullname" . }}-mqtt {{ .Values.listeners.mqtt.port }}:{{ .Values.listeners.mqtt.port }}
+
+  # Connect using: mqtt://localhost:{{ .Values.listeners.mqtt.port }}
 {{- end }}
-{{- else if contains "NodePort" .Values.service.type }}
-  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "mosquitto.fullname" . }})
-  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
-  echo ws://$NODE_IP:$NODE_PORT
-{{- else if contains "LoadBalancer" .Values.service.type }}
-     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "mosquitto.fullname" . }}'
-  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "mosquitto.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
-  echo ws://$SERVICE_IP:{{ .Values.service.mqttPort }}
-{{- else if contains "ClusterIP" .Values.service.type }}
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "mosquitto.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
-  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
-  echo "Use ws://127.0.0.1:1883"
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 1883:$CONTAINER_PORT
+{{- end }}
+
+{{- if .Values.listeners.mqttTls.enabled }}
+## MQTT over TLS (port {{ .Values.listeners.mqttTls.port }})
+{{- if eq .Values.service.mqtt.type "LoadBalancer" }}
+  # Get the LoadBalancer IP for secure MQTT connections:
+  kubectl get svc --namespace {{ .Release.Namespace }} {{ include "mosquitto.fullname" . }}-mqtt
+
+  # Connect using: mqtts://<EXTERNAL-IP>:{{ .Values.listeners.mqttTls.port }}
+{{- else if eq .Values.service.mqtt.type "ClusterIP" }}
+  # Port-forward for local access:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "mosquitto.fullname" . }}-mqtt {{ .Values.listeners.mqttTls.port }}:{{ .Values.listeners.mqttTls.port }}
+
+  # Connect using: mqtts://localhost:{{ .Values.listeners.mqttTls.port }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.listeners.websocket.enabled }}
+## MQTT over WebSocket (port {{ .Values.listeners.websocket.port }})
+{{- if .Values.listeners.websocket.ingress.enabled }}
+{{- range $host := .Values.listeners.websocket.ingress.hosts }}
+  # WebSocket via ingress:
+  ws{{ if $.Values.listeners.websocket.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else if eq .Values.service.websocket.type "LoadBalancer" }}
+  # Get the LoadBalancer IP for WebSocket connections:
+  kubectl get svc --namespace {{ .Release.Namespace }} {{ include "mosquitto.fullname" . }}-websocket
+
+  # Connect using: ws://<EXTERNAL-IP>:{{ .Values.listeners.websocket.port }}
+{{- else if eq .Values.service.websocket.type "ClusterIP" }}
+  # Port-forward for local access:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "mosquitto.fullname" . }}-websocket {{ .Values.listeners.websocket.port }}:{{ .Values.listeners.websocket.port }}
+
+  # Connect using: ws://localhost:{{ .Values.listeners.websocket.port }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.auth.enabled }}
+
+## Authentication
+Username: admin
+Password: admin (default - change in production!)
+{{- end }}
+
+## Useful Commands
+# View logs:
+kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "mosquitto.name" . }}"
+
+# Test MQTT connection:
+{{- if .Values.listeners.mqtt.enabled }}
+mosquitto_pub -h <HOST> -p {{ .Values.listeners.mqtt.port }} -t test -m "hello"
+{{- end }}
+{{- if .Values.listeners.mqttTls.enabled }}
+mosquitto_pub -h <HOST> -p {{ .Values.listeners.mqttTls.port }} --cafile ca.crt -t test -m "hello"
 {{- end }}

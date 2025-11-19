@@ -1,19 +1,54 @@
+{{- if or .Values.listeners.mqtt.enabled .Values.listeners.mqttTls.enabled }}
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mosquitto.fullname" . }}
+  name: {{ include "mosquitto.fullname" . }}-mqtt
   labels:
     {{- include "mosquitto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mqtt
+  {{- with .Values.service.mqtt.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.service.mqtt.type }}
   ports:
-    - port: {{ .Values.service.mqttPort }}
+    {{- if .Values.listeners.mqtt.enabled }}
+    - port: {{ .Values.listeners.mqtt.port }}
       targetPort: mqtt
       protocol: TCP
       name: mqtt
-    - port: {{ .Values.service.mqttOverWebsocketPort }}
+    {{- end }}
+    {{- if .Values.listeners.mqttTls.enabled }}
+    - port: {{ .Values.listeners.mqttTls.port }}
+      targetPort: mqtt-tls
+      protocol: TCP
+      name: mqtt-tls
+    {{- end }}
+  selector:
+    {{- include "mosquitto.selectorLabels" . | nindent 4 }}
+{{- end }}
+{{- if .Values.listeners.websocket.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mosquitto.fullname" . }}-websocket
+  labels:
+    {{- include "mosquitto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: websocket
+  {{- with .Values.service.websocket.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.websocket.type }}
+  ports:
+    - port: {{ .Values.listeners.websocket.port }}
       targetPort: mqtt-ws
       protocol: TCP
       name: mqtt-ws
   selector:
     {{- include "mosquitto.selectorLabels" . | nindent 4 }}
+{{- end }}

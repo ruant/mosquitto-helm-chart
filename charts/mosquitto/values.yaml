@@ -5,10 +5,86 @@
 image:
   repository: eclipse-mosquitto
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "2.0.22"
 
-mqttOverWebsocket: true
+# =============================================================================
+# LISTENER CONFIGURATION
+# =============================================================================
+# Configure which MQTT listeners are enabled
+# You can enable/disable each listener type independently for maximum flexibility
+
+listeners:
+  # Plain MQTT (unencrypted TCP connection)
+  # Disable this for secure-only deployments
+  mqtt:
+    enabled: true
+    port: 1883
+
+  # MQTT over WebSocket
+  # Choose between ingress TLS (tls.enabled: false) or direct TLS (tls.enabled: true)
+  websocket:
+    enabled: true
+    port: 9001
+    tls:
+      # Enable direct TLS termination by Mosquitto for WebSocket
+      # Set to false if using nginx ingress for TLS termination
+      enabled: false
+      # # WebSocket TLS configuration (uncomment when tls.enabled: true)
+      # secretName: "websocket-tls-secret"
+      # certKey: "tls.crt"
+      # keyKey: "tls.key"
+      # # Optional settings for WebSocket TLS
+      # caKey: "ca.crt"
+      # requireClientCerts: false
+      # # Custom cipher suites (WebSocket TLS limitation - only these options supported)
+      # ciphers: "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305"
+      # ciphersTls13: "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256"
+
+    # Kubernetes Ingress for WebSocket (alternative to direct TLS)
+    # Use this when you want nginx/ingress-controller to handle TLS termination
+    # Note: Set tls.enabled=false when using ingress for TLS
+    ingress:
+      enabled: false
+      # # Ingress configuration (uncomment when enabled: true)
+      # className: "nginx"
+      # annotations:
+      #   kubernetes.io/ingress.class: nginx
+      #   kubernetes.io/tls-acme: "true"
+      #   cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      # hosts:
+      #   - host: mqtt-ws.example.com
+      #     paths:
+      #       - path: /
+      #         pathType: Prefix
+      # tls:
+      #   - secretName: mqtt-websocket-tls
+      #     hosts:
+      #       - mqtt-ws.example.com
+
+  # MQTT over TLS (encrypted TCP connection)
+  # Direct TLS encryption handled by Mosquitto using cert-manager certificates
+  mqttTls:
+    enabled: false
+    port: 8883
+    # # MQTT TLS configuration (uncomment when enabled: true)
+    # tls:
+    #   # Kubernetes secret containing TLS certificate and key (cert-manager or manual)
+    #   secretName: "mqtt-tls-secret"
+    #   certKey: "tls.crt"
+    #   keyKey: "tls.key"
+    #   # TLS version and security settings
+    #   minVersion: "tlsv1.2"
+    #   # # Advanced TLS options (available for MQTT TLS, not WebSocket TLS)
+    #   # caKey: "ca.crt"
+    #   # requireClientCerts: false
+    #   # useClientCertAsUsername: false
+    #   # # Custom cipher suites
+    #   # ciphers: "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305"
+    #   # ciphersTls13: "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256"
+
+# =============================================================================
+# GENERAL MOSQUITTO CONFIGURATION
+# =============================================================================
 
 general:
   maxInflightMessages: 20
@@ -16,6 +92,8 @@ general:
 
 auth:
   enabled: true
+  # # Use an existing secret for user passwords (optional)
+  # usersExistingSecret: "mqtt-users-secret"
   users:
     - username: admin
       # "admin" password in sha512-pbkdf2 format, generated with mosquitto_passwd
@@ -24,20 +102,26 @@ auth:
         - topic: "#"
           access: readwrite
 
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
+# # Image pull secrets (uncomment if needed for private registries)
+# imagePullSecrets:
+#   - name: "my-registry-secret"
+
+# # Chart name overrides (optional)
+# nameOverride: ""
+# fullnameOverride: "my-mosquitto"
 
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
-  annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+  # # Optional service account configuration
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::123456789:role/mosquitto-role
+  # name: "my-service-account"
 
-podAnnotations: {}
+# # Optional pod annotations
+# podAnnotations:
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "9090"
 
 podSecurityContext:
   fsGroup: 1883
@@ -53,40 +137,59 @@ securityContext:
   runAsUser: 1883
 
 service:
-  type: ClusterIP
-  mqttPort: 1883
-  mqttOverWebsocketPort: 9001 
+  # MQTT Service (for plain MQTT 1883 and MQTT TLS 8883)
+  # Uses LoadBalancer for direct client connections to MQTT brokers
+  mqtt:
+    type: LoadBalancer
+    # # MQTT service annotations (uncomment as needed)
+    # annotations:
+    #   # AWS Load Balancer Controller for MQTT
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    #   service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    #   # GCP Load Balancer for MQTT
+    #   cloud.google.com/load-balancer-type: "External"
+    #   # MetalLB for MQTT
+    #   metallb.universe.tf/address-pool: "production-public-ips"
 
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
+  # WebSocket Service (for MQTT over WebSocket 9001)
+  # Uses ClusterIP when ingress enabled, LoadBalancer for direct access
+  websocket:
+    type: ClusterIP
+    # # WebSocket service annotations (uncomment as needed)
+    # annotations:
+    #   # Prometheus monitoring for WebSocket
+    #   prometheus.io/scrape: "true"
+    #   prometheus.io/port: "9001"
+    #   # Istio service mesh for WebSocket
+    #   traffic.sidecar.istio.io/includeInboundPorts: "9001"
 
+# Resource limits and requests (recommended for production)
 resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
+  #   cpu: 200m
+  #   memory: 256Mi
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
 
-nodeSelector: {}
+# # Node selection (optional)
+# nodeSelector:
+#   kubernetes.io/arch: amd64
 
-tolerations: []
+# # Tolerations for node taints (optional)
+# tolerations:
+#   - key: "mqtt"
+#     operator: "Equal"
+#     value: "true"
+#     effect: "NoSchedule"
 
-affinity: {}
+# # Pod affinity/anti-affinity (optional)
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: kubernetes.io/arch
+#           operator: In
+#           values:
+#           - amd64

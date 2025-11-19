@@ -6,12 +6,58 @@ metadata:
     {{- include "mosquitto.labels" . | nindent 4 }}
 data:
   mosquitto.conf: |-
-    listener 1883 0.0.0.0
+    {{- if .Values.listeners.mqtt.enabled }}
+    # Plain MQTT listener (unencrypted)
+    listener {{ .Values.listeners.mqtt.port }} 0.0.0.0
     protocol mqtt
-    
-    {{- if .Values.mqttOverWebsocket }}
-    listener 9001 0.0.0.0
+    {{- end }}
+
+    {{- if .Values.listeners.websocket.enabled }}
+    # MQTT over WebSocket listener
+    {{- if .Values.listeners.websocket.tls.enabled }}
+    # WebSocket with direct TLS termination
+    listener {{ .Values.listeners.websocket.port }} 0.0.0.0
     protocol websockets
+    certfile /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.certKey }}
+    keyfile /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.keyKey }}
+    {{- if .Values.listeners.websocket.tls.requireClientCerts }}
+    cafile /mosquitto/certs-ws/{{ .Values.listeners.websocket.tls.caKey }}
+    {{- end }}
+    {{- if .Values.listeners.websocket.tls.ciphers }}
+    ciphers {{ .Values.listeners.websocket.tls.ciphers }}
+    {{- end }}
+    {{- if .Values.listeners.websocket.tls.ciphersTls13 }}
+    ciphers_tls1.3 {{ .Values.listeners.websocket.tls.ciphersTls13 }}
+    {{- end }}
+    {{- else }}
+    # WebSocket without TLS (TLS handled by ingress)
+    listener {{ .Values.listeners.websocket.port }} 0.0.0.0
+    protocol websockets
+    {{- end }}
+    {{- end }}
+
+    {{- if and .Values.listeners.mqttTls.enabled .Values.listeners.mqttTls.tls }}
+    # MQTT over TLS listener (encrypted TCP)
+    listener {{ .Values.listeners.mqttTls.port }} 0.0.0.0
+    protocol mqtt
+    certfile /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.certKey | default "tls.crt" }}
+    keyfile /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.keyKey | default "tls.key" }}
+    {{- if .Values.listeners.mqttTls.tls.requireClientCerts }}
+    cafile /mosquitto/certs/{{ .Values.listeners.mqttTls.tls.caKey | default "ca.crt" }}
+    require_certificate true
+    {{- if .Values.listeners.mqttTls.tls.useClientCertAsUsername }}
+    use_identity_as_username true
+    {{- end }}
+    {{- else }}
+    require_certificate false
+    {{- end }}
+    tls_version {{ .Values.listeners.mqttTls.tls.minVersion | default "tlsv1.2" }}
+    {{- if .Values.listeners.mqttTls.tls.ciphers }}
+    ciphers {{ .Values.listeners.mqttTls.tls.ciphers }}
+    {{- end }}
+    {{- if .Values.listeners.mqttTls.tls.ciphersTls13 }}
+    ciphers_tls1.3 {{ .Values.listeners.mqttTls.tls.ciphersTls13 }}
+    {{- end }}
     {{- end }}
 
     log_dest stdout
